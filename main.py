@@ -5,6 +5,7 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 import pandas as pd
+import numpy as np
 
 from torch.utils.data import DataLoader
 
@@ -118,4 +119,14 @@ writeInfo(q1, q2, qt)
         weather conditions
 """
 
+newInfo = pd.DataFrame()
+newInfo['Driver'] = np.nan
+newInfo['LapTime'] = np.nan
+newInfo['TireAge'] = np.nan
+newInfo['Weather'] = np.nan
+newInfo['PreviousLap'] = np.nan
 
+
+for i in q1:
+     for d in q1[i]['Driver']:
+        print(d)
