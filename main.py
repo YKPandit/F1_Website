@@ -9,6 +9,36 @@ import numpy as np
 
 from torch.utils.data import DataLoader
 
+from SimpleNN import SimpleNN
+
+
+
+"""
+    Steps:
+        1. Get the qualifying data of a given driver, example Leclerc
+        2. Train a model based on all their laptimes and predict what their qualifying lap will be
+            
+        
+    Setup:
+        1. Get a given session's data
+        2. Get all driver lap times for Q3 and Quali
+            -> get it as driver track lap # tireCompund laps on Compound etc
+        3. Create a new pandas dataframe that is set up as follows:
+            -> Same as before but each non-numerical thing is set up as a binary value(one hot encoding)
+        4. Delete useless data and set it up to be trained
+
+    Training:
+        1. See MLP model trained before -> use 2022->2023 to train model and 2024 to test the model
+"""
+
+
+"""
+    Data to keep in the new pandas df(sort the df by fastest laptime):
+        driver abbrv
+        laptimes
+        tire age
+        weather conditions
+"""
 
 # Functions
 def get_qualifying_laps(year: int, gp_name: str) -> dict:
@@ -55,39 +85,6 @@ def get_qualifying_laps(year: int, gp_name: str) -> dict:
             continue # Continue to the next driver
 
     return driver_laps
-
-def writeInfo(q1, q2, qt):
-    with open("quali_data.txt", "w") as f:
-        # Set pandas display options for wider, non-wrapping output
-        pd.set_option('display.width', 10000)  # Adjust width as needed
-        pd.set_option('display.max_columns', None) # Ensure all columns are shown
-        pd.set_option('display.max_rows', None) # Ensure all rows are shown
-
-        f.write(f"Qualifying Data for {race}\\n")
-        f.write("=============================\\n")
-
-        f.write("\n--- 2022 ---\\n\n")
-        for driver_abbr, laps_df in q1.items():
-                #f.write(f"\n----- {driver_abbr} -----\\n")
-                f.write(laps_df.to_markdown() + "\\n\\n")
-
-        f.write("\n--- 2023 ---\\n\n")
-        for driver_abbr, laps_df in q2.items():
-                #f.write(f"\n----- {driver_abbr} -----\\n")
-                f.write(laps_df.to_markdown() + "\\n\\n")
-
-        # Note: qt is currently the same as q2 (both 2023), you might want to adjust this
-        f.write("\n--- 2024 (Test Set?) ---\\n\n")
-        for driver_abbr, laps_df in qt.items():
-                #f.write(f"\n----- {driver_abbr} -----\\n")
-                f.write(laps_df.to_markdown() + "\\n\\n")
-
-    print("Data written to quali_data.txt")
-
-    # Reset pandas options to default (optional, good practice)
-    pd.reset_option('display.width')
-    pd.reset_option('display.max_columns')
-    pd.reset_option('display.max_rows')
 
 def clean_data(q1):
     newInfo = pd.DataFrame()
@@ -136,25 +133,8 @@ def clean_data(q1):
     return newInfo
 
 
-
-"""
-    Steps:
-        1. Get the qualifying data of a given driver, example Leclerc
-        2. Train a model based on all their laptimes and predict what their qualifying lap will be
-            
-        
-    Setup:
-        1. Get a given session's data
-        2. Get all driver lap times for Q3 and Quali
-            -> get it as driver track lap # tireCompund laps on Compound etc
-        3. Create a new pandas dataframe that is set up as follows:
-            -> Same as before but each non-numerical thing is set up as a binary value(one hot encoding)
-        4. Delete useless data and set it up to be trained
-
-    Training:
-        1. See MLP model trained before -> use 2022->2023 to train model and 2024 to test the model
-"""
-
+### Main ###
+num_features = 5
 race = input("Enter race name: ")
 
 # Training set 1
@@ -166,16 +146,6 @@ q2 = get_qualifying_laps(2023, race)
 qt = get_qualifying_laps(2024, race)
 
 
-writeInfo(q1, q2, qt)
-
-"""
-    Data to keep in the new pandas df(sort the df by fastest laptime):
-        driver abbrv
-        laptimes
-        tire age
-        weather conditions
-"""
-
 q_1 = clean_data(q1)
 q_1.sort_values(by=['LapTime'], inplace=True)
 q_2 = clean_data(q2)
@@ -183,11 +153,42 @@ q_2.sort_values(by=['LapTime'], inplace=True)
 q_t = clean_data(qt)
 q_t.sort_values(by=['LapTime'], inplace=True)
 
+q_1 = pd.get_dummies(q_1, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'])
+q_2 = pd.get_dummies(q_2, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'])
+q_t = pd.get_dummies(q_t, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'])
+
 
 # Print the final DataFrame as a markdown table
 print("\n--- Final newInfo DataFrame ---")
-# index=False prevents printing the default DataFrame index column
-print(q_1.to_markdown(index=False))
-print(q_2.to_markdown(index=False))
-print(q_t.to_markdown(index=False))
+
+# Writing so I can understand what the data looks like
+file = open("quali_data.txt", "w+")
+file.write(q_1.to_markdown(index=False))
+file.write(q_2.to_markdown(index=False))
+file.write(q_t.to_markdown(index=False))
+
 print(f"Len of df: {len(q_1)+ len(q_2)+ len(q_t)}")
+
+num_features = len(q_1.columns)
+
+
+# Training the model
+model = SimpleNN(num_features, 10, 10, 1)
+
+batch_1 = len(q_1)
+batch_2 = len(q_2)
+batch_test = len(q_t)
+
+
+# Spliting into data and comparison
+X_1_train = q_1.drop(columns=['LapTime'])
+y_1_train = q_1['LapTime']
+
+X_2_train = q_2.drop(columns=['LapTime'])
+y_2_train = q_2['LapTime']
+
+
+X_test = q_t.drop(columns=['LapTime'])
+y_test = q_t['LapTime']
+
+
