@@ -10,7 +10,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 
-# AI Written functions
+# Functions
 def get_qualifying_laps(year: int, gp_name: str) -> dict:
     """
     Retrieves all quick qualifying laps for each driver in a specific F1 qualifying session.
@@ -89,8 +89,53 @@ def writeInfo(q1, q2, qt):
     pd.reset_option('display.max_columns')
     pd.reset_option('display.max_rows')
 
+def clean_data(q1):
+    newInfo = pd.DataFrame()
+    newInfo['Driver'] = np.nan
+    newInfo['LapTime'] = np.nan
+    newInfo['TireAge'] = np.nan
+    newInfo['Weather'] = np.nan
+    newInfo['PreviousLap'] = np.nan
 
-# Functions
+
+    for i in q1: # i is the driver abbreviation (e.g., 'LEC')
+        lap_data_lines = [] # Store lines for this driver
+        # laps_df is the DataFrame for the current driver 'i'
+        laps_df = q1[i]
+
+        previous_lap_time = None
+        previous_lap_driver = None
+        # Iterate over each lap (row) in the DataFrame
+        for index, lap_row in laps_df.iterrows():
+            # # lap_row is a pandas Series containing all data for one lap
+            driver_abbr = i # We already have the abbreviation from the outer loop
+            weather = lap_row['WeatherCondition']
+
+            lap_time = lap_row['LapTime']
+            lap_time = pd.to_timedelta(lap_time)
+            lap_time = lap_time/pd.Timedelta(seconds=1)
+
+            tire_age = lap_row['TyreLife']
+
+            if(previous_lap_time != None and previous_lap_driver == driver_abbr):
+                temp = pd.DataFrame({
+                    'Driver': [driver_abbr],  # Value needs to be in a list/iterable
+                    'LapTime': [lap_time],
+                    'Weather': [weather],
+                    'PreviousLap': [previous_lap_time],
+                    'TireAge':[tire_age]
+                    # Add other columns if needed
+                })
+
+                newInfo = pd.concat([newInfo, temp], ignore_index=True)
+
+            previous_lap_time = lap_time
+            previous_lap_driver = driver_abbr
+
+
+    return newInfo
+
+
 
 """
     Steps:
@@ -112,9 +157,13 @@ def writeInfo(q1, q2, qt):
 
 race = input("Enter race name: ")
 
+# Training set 1
 q1 = get_qualifying_laps(2022, race)
+# Training set 2
 q2 = get_qualifying_laps(2023, race)
-qt = get_qualifying_laps(2023, race)
+
+# Testing set
+qt = get_qualifying_laps(2024, race)
 
 
 writeInfo(q1, q2, qt)
@@ -127,51 +176,18 @@ writeInfo(q1, q2, qt)
         weather conditions
 """
 
-newInfo = pd.DataFrame()
-newInfo['Driver'] = np.nan
-newInfo['LapTime'] = np.nan
-newInfo['TireAge'] = np.nan
-newInfo['Weather'] = np.nan
-newInfo['PreviousLap'] = np.nan
-
-
-for i in q1: # i is the driver abbreviation (e.g., 'LEC')
-    lap_data_lines = [] # Store lines for this driver
-    # laps_df is the DataFrame for the current driver 'i'
-    laps_df = q1[i]
-
-    previous_lap_time = None
-    previous_lap_driver = None
-    # Iterate over each lap (row) in the DataFrame
-    for index, lap_row in laps_df.iterrows():
-        # # lap_row is a pandas Series containing all data for one lap
-        driver_abbr = i # We already have the abbreviation from the outer loop
-        weather = lap_row['WeatherCondition']
-
-        lap_time = lap_row['LapTime']
-        lap_time = pd.to_timedelta(lap_time)
-        lap_time = lap_time/pd.Timedelta(seconds=1)
-
-        tire_age = lap_row['TyreLife']
-
-        if(previous_lap_time != None and previous_lap_driver == driver_abbr):
-            temp = pd.DataFrame({
-                'Driver': [driver_abbr],  # Value needs to be in a list/iterable
-                'LapTime': [lap_time],
-                'Weather': [weather],
-                'PreviousLap': [previous_lap_time],
-                'TireAge':[tire_age]
-                # Add other columns if needed
-            })
-
-            newInfo = pd.concat([newInfo, temp], ignore_index=True)
-
-        previous_lap_time = lap_time
-        previous_lap_driver = driver_abbr
+q_1 = clean_data(q1)
+q_1.sort_values(by=['LapTime'], inplace=True)
+q_2 = clean_data(q2)
+q_2.sort_values(by=['LapTime'], inplace=True)
+q_t = clean_data(qt)
+q_t.sort_values(by=['LapTime'], inplace=True)
 
 
 # Print the final DataFrame as a markdown table
 print("\n--- Final newInfo DataFrame ---")
 # index=False prevents printing the default DataFrame index column
-print(newInfo.to_markdown(index=False))
-print(f"Len of df: {len(newInfo)}")
+print(q_1.to_markdown(index=False))
+print(q_2.to_markdown(index=False))
+print(q_t.to_markdown(index=False))
+print(f"Len of df: {len(q_1)+ len(q_2)+ len(q_t)}")
