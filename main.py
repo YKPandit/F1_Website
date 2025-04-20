@@ -26,7 +26,7 @@ def get_qualifying_laps(year: int, gp_name: str) -> dict:
     """
     try:
         session = fastf1.get_session(year, gp_name, 'Q')
-        session.load(laps=True, telemetry=False, weather=False, messages=False) # Load only necessary data
+        session.load(laps=True, telemetry=False, weather=True, messages=False) # Load only necessary data
     except Exception as e:
         print(f"Error loading session {year} {gp_name} Qualifying: {e}")
         return {}
@@ -38,6 +38,15 @@ def get_qualifying_laps(year: int, gp_name: str) -> dict:
             driver_info = session.get_driver(driver_number)
             driver_abbreviation = driver_info['Abbreviation']
             laps = session.laps.pick_driver(driver_number).pick_quicklaps()
+            # Merge weather data onto the laps DataFrame
+            temp = laps.get_weather_data()
+
+            # Create a simplified weather condition column
+            if 'Rainfall' in temp.columns:
+                laps['WeatherCondition'] = np.where(temp['Rainfall'] == True, 'Wet', 'Dry')
+            else:
+                laps['WeatherCondition'] = 'Unknown' # Or handle as appropriate if weather data missing
+
             if not laps.empty:
                 driver_laps[driver_abbreviation] = laps
         except Exception as e:
@@ -105,7 +114,6 @@ race = input("Enter race name: ")
 
 q1 = get_qualifying_laps(2022, race)
 q2 = get_qualifying_laps(2023, race)
-
 qt = get_qualifying_laps(2023, race)
 
 
@@ -127,6 +135,43 @@ newInfo['Weather'] = np.nan
 newInfo['PreviousLap'] = np.nan
 
 
-for i in q1:
-     for d in q1[i]['Driver']:
-        print(d)
+for i in q1: # i is the driver abbreviation (e.g., 'LEC')
+    lap_data_lines = [] # Store lines for this driver
+    # laps_df is the DataFrame for the current driver 'i'
+    laps_df = q1[i]
+
+    previous_lap_time = None
+    previous_lap_driver = None
+    # Iterate over each lap (row) in the DataFrame
+    for index, lap_row in laps_df.iterrows():
+        # # lap_row is a pandas Series containing all data for one lap
+        driver_abbr = i # We already have the abbreviation from the outer loop
+        weather = lap_row['WeatherCondition']
+
+        lap_time = lap_row['LapTime']
+        lap_time = pd.to_timedelta(lap_time)
+        lap_time = lap_time/pd.Timedelta(seconds=1)
+
+        tire_age = lap_row['TyreLife']
+
+        if(previous_lap_time != None and previous_lap_driver == driver_abbr):
+            temp = pd.DataFrame({
+                'Driver': [driver_abbr],  # Value needs to be in a list/iterable
+                'LapTime': [lap_time],
+                'Weather': [weather],
+                'PreviousLap': [previous_lap_time],
+                'TireAge':[tire_age]
+                # Add other columns if needed
+            })
+
+            newInfo = pd.concat([newInfo, temp], ignore_index=True)
+
+        previous_lap_time = lap_time
+        previous_lap_driver = driver_abbr
+
+
+# Print the final DataFrame as a markdown table
+print("\n--- Final newInfo DataFrame ---")
+# index=False prevents printing the default DataFrame index column
+print(newInfo.to_markdown(index=False))
+print(f"Len of df: {len(newInfo)}")
