@@ -2,12 +2,15 @@ import fastf1
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision
-import torchvision.transforms as transforms
 import pandas as pd
 import numpy as np
 
+import math
 from torch.utils.data import DataLoader
+from sklearn.preprocessing import StandardScaler
+
+from torch.utils.data import TensorDataset
+
 
 from SimpleNN import SimpleNN
 
@@ -132,6 +135,13 @@ def clean_data(q1):
 
     return newInfo
 
+def scale_data(X_1_train):
+    cols_to_scale = X_1_train.select_dtypes(include=np.double).columns.to_list()
+    scalar = StandardScaler()
+    scalar.fit(X_1_train[cols_to_scale])
+    x_1_scaled = scalar.transform(X_1_train[cols_to_scale])
+    return pd.DataFrame(x_1_scaled, index=X_1_train.index, columns=cols_to_scale)
+
 
 ### Main ###
 num_features = 5
@@ -147,33 +157,21 @@ qt = get_qualifying_laps(2024, race)
 
 
 q_1 = clean_data(q1)
-q_1.sort_values(by=['LapTime'], inplace=True)
 q_2 = clean_data(q2)
-q_2.sort_values(by=['LapTime'], inplace=True)
+# q_2.sort_values(by=['LapTime'], inplace=True)
 q_t = clean_data(qt)
-q_t.sort_values(by=['LapTime'], inplace=True)
-
-q_1 = pd.get_dummies(q_1, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'])
-q_2 = pd.get_dummies(q_2, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'])
-q_t = pd.get_dummies(q_t, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'])
-
+# q_t.sort_values(by=['LapTime'], inplace=True)
 
 # Print the final DataFrame as a markdown table
 print("\n--- Final newInfo DataFrame ---")
 
-# Writing so I can understand what the data looks like
-file = open("quali_data.txt", "w+")
-file.write(q_1.to_markdown(index=False))
-file.write(q_2.to_markdown(index=False))
-file.write(q_t.to_markdown(index=False))
+
 
 print(f"Len of df: {len(q_1)+ len(q_2)+ len(q_t)}")
 
-num_features = len(q_1.columns)
 
 
-# Training the model
-model = SimpleNN(num_features, 10, 10, 1)
+
 
 batch_1 = len(q_1)
 batch_2 = len(q_2)
@@ -191,4 +189,144 @@ y_2_train = q_2['LapTime']
 X_test = q_t.drop(columns=['LapTime'])
 y_test = q_t['LapTime']
 
+
+
+X_1_train = pd.get_dummies(X_1_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+X_2_train = pd.get_dummies(X_2_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+X_test = pd.get_dummies(X_test, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+
+
+X_1_train['TireAge'] = X_1_train['TireAge'].astype(np.double)
+X_2_train['TireAge'] = X_2_train['TireAge'].astype(np.double)
+X_test['TireAge'] = X_test['TireAge'].astype(np.double)
+
+cols_to_scale = X_1_train.select_dtypes(include=np.double).columns.to_list()
+
+
+X_1_train[cols_to_scale] = scale_data(X_1_train)
+X_2_train[cols_to_scale] = scale_data(X_2_train)
+X_test[cols_to_scale] = scale_data(X_test)
+
+
+# Writing so I can understand what the data looks like
+file = open("quali_data.txt", "w+")
+file.write(X_1_train.to_markdown(index=False))
+file.write('\n')
+file.write(X_2_train.to_markdown(index=False))
+file.write('\n')
+file.write(X_test.to_markdown(index=False))
+
+num_features = len(X_1_train.columns)
+
+
+# Training the model
+model = SimpleNN(num_features, 10, 10, 1)
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
+
+# Convert features to numpy float32 first
+X_1_train_np = X_1_train.to_numpy(dtype=np.float32)
+X_2_train_np = X_2_train.to_numpy(dtype=np.float32)
+X_test_np = X_test.to_numpy(dtype=np.float32)
+
+# Convert targets to numpy float32 AND reshape for loss function (usually needs [N, 1])
+y_1_train_np = y_1_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+y_2_train_np = y_2_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+y_test_np = y_test.to_numpy(dtype=np.float32).reshape(-1, 1)
+
+# Convert to tensors from float32 numpy arrays
+X_1_train = torch.from_numpy(X_1_train_np)
+y_1_train = torch.from_numpy(y_1_train_np)
+X_2_train = torch.from_numpy(X_2_train_np)
+y_2_train = torch.from_numpy(y_2_train_np)
+X_test = torch.from_numpy(X_test_np)
+y_test = torch.from_numpy(y_test_np)
+
+# --- 1. Combine Training Data ---
+X_train_combined = torch.cat((X_1_train, X_2_train), dim=0)
+y_train_combined = torch.cat((y_1_train, y_2_train), dim=0)
+
+# --- 2. Create Dataset and DataLoader for Combined Training Data ---
+train_dataset = TensorDataset(X_train_combined, y_train_combined)
+batch_size = 32 # Choose a reasonable batch size (e.g., 32, 64, 128)
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) # Shuffle training data is important!
+
+# --- 3. Create DataLoader for Validation Data ---
+val_dataset = TensorDataset(X_test, y_test)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size) # No need to shuffle validation data
+
+
+
+# --- 5. The Correct Training Loop with Batches and Validation ---
+epochs = 10000 # Total epochs over the combined data
+
+print("Starting training loop...")
+
+
+for epoch in range(epochs):
+    # Set the model to training mode
+    model.train()
+    train_loss_sum = 0.0 # Accumulate loss for the epoch
+
+    # Iterate over batches from the *combined* training dataloader
+    for batch_inputs, batch_targets in train_dataloader:
+        
+
+        # Zero the parameter gradients
+        optimizer.zero_grad()
+
+        # Forward Pass
+        outputs = model(batch_inputs)
+
+        # Calculate Loss for the CURRENT BATCH
+        # Ensure targets have the same shape as outputs if necessary (e.g., both [batch_size, 1])
+        loss = criterion(outputs, batch_targets)
+
+        # Backward Pass (Backpropagation)
+        loss.backward()
+
+        # Optimizer Step (Update weights and biases)
+        optimizer.step()
+
+        train_loss_sum += loss.item() * batch_inputs.size(0) # Accumulate loss for the epoch
+
+    # Calculate average training loss for the epoch
+    avg_train_loss = train_loss_sum / len(train_dataset)
+
+    # --- Evaluation on Validation Set ---
+    model.eval() # Set the model to evaluation mode
+    val_loss_sum = 0.0
+    with torch.no_grad(): # Disable gradient calculation for evaluation
+        for val_inputs, val_targets in val_dataloader: # Use your actual val_dataloader here
+             val_outputs = model(val_inputs)
+             batch_val_loss = criterion(val_outputs, val_targets)
+             val_loss_sum += batch_val_loss.item() * val_inputs.size(0) # Accumulate loss
+
+    avg_val_loss = val_loss_sum / len(val_dataset)
+
+    # Print epoch statistics (shows training progress)
+    if (epoch + 1) % 100 == 0: # Print every 10 epochs, or more/less often
+         print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}')
+
+print("Training loop finished.")
+
+# --- Final Evaluation on Test Data (after the training loop is completely done) ---
+# You would do this using X_test, y_test (or your test_dataloader) once you've
+# finished training and potentially selected the best model based on validation performance.
+# This final step is separate from the training loop above.
+
+abbr = input("Enter driver abbr: ")
+tireAge = input("Enter tire age: ")
+previousLap = input("Enter previous laptime: ")
+weather_cond = input("Enter weather conditions: ")
+
+prediciton = {
+    "Driver":abbr,
+    "LapTime":np.nan,
+    "TireAge":tireAge,
+    "Weather":weather_cond,
+    "PreviousLap":previousLap
+}
+
+df = pd.DataFrame(prediciton)
 

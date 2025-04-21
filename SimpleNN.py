@@ -34,6 +34,6 @@ class SimpleNN(nn.Module):
         x = torch.relu(x)
         x = self.fc3(x)
 
-        predictions = self.sigmoid(x)
+        # predictions = self.sigmoid(x)
 
-        return predictions
+        return x
