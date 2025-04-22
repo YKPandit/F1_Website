@@ -42,7 +42,7 @@ from SimpleNN import SimpleNN
         tire age
         weather conditions
 """
-
+scalar = StandardScaler()
 # Functions
 def get_qualifying_laps(year: int, gp_name: str) -> dict:
     """
@@ -137,7 +137,7 @@ def clean_data(q1):
 
 def scale_data(X_1_train):
     cols_to_scale = X_1_train.select_dtypes(include=np.double).columns.to_list()
-    scalar = StandardScaler()
+    
     scalar.fit(X_1_train[cols_to_scale])
     x_1_scaled = scalar.transform(X_1_train[cols_to_scale])
     return pd.DataFrame(x_1_scaled, index=X_1_train.index, columns=cols_to_scale)
@@ -220,9 +220,11 @@ num_features = len(X_1_train.columns)
 
 
 # Training the model
-model = SimpleNN(num_features, 10, 10, 1)
+model = SimpleNN(num_features, 5, 5, 1)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
+
+cols_to_train = X_1_train.columns.to_list()
 
 # Convert features to numpy float32 first
 X_1_train_np = X_1_train.to_numpy(dtype=np.float32)
@@ -258,10 +260,9 @@ val_dataloader = DataLoader(val_dataset, batch_size=batch_size) # No need to shu
 
 
 # --- 5. The Correct Training Loop with Batches and Validation ---
-epochs = 10000 # Total epochs over the combined data
+epochs = 4000 # Total epochs over the combined data
 
 print("Starting training loop...")
-
 
 for epoch in range(epochs):
     # Set the model to training mode
@@ -315,18 +316,41 @@ print("Training loop finished.")
 # finished training and potentially selected the best model based on validation performance.
 # This final step is separate from the training loop above.
 
+
 abbr = input("Enter driver abbr: ")
-tireAge = input("Enter tire age: ")
-previousLap = input("Enter previous laptime: ")
+tireAge = int(input("Enter tire age: "))
+previousLap = float(input("Enter previous laptime: "))
 weather_cond = input("Enter weather conditions: ")
 
 prediciton = {
-    "Driver":abbr,
-    "LapTime":np.nan,
-    "TireAge":tireAge,
-    "Weather":weather_cond,
-    "PreviousLap":previousLap
+    "Driver":[abbr],
+    "LapTime":[np.nan],
+    "TireAge":[tireAge],
+    "Weather":[weather_cond],
+    "PreviousLap":[previousLap]
 }
 
 df = pd.DataFrame(prediciton)
 
+df = pd.get_dummies(df, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+df = df.reindex(columns=cols_to_train, fill_value=0)
+
+# scalar.fit(df)
+# df = scalar.transform(df)
+
+df['TireAge'] = df['TireAge'].astype(np.double)
+df['PreviousLap'] = df['PreviousLap'].astype(np.double)
+
+cols_to_scale = df.select_dtypes(include=np.double).columns.to_list()
+df[cols_to_scale] = scale_data(df)
+
+input_val = torch.from_numpy(df.to_numpy(dtype=np.float32))
+
+
+
+model.eval()
+
+with torch.no_grad():
+    predicted = model(input_val)
+
+    print(f"Predicted lap time: {predicted}")
