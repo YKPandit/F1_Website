@@ -10,8 +10,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 # Processing imports
-import pandas
-import numpy
+import pandas as pd
+import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 # Local Model Definition
@@ -29,15 +29,55 @@ Return: dataframe of the session's information
 Description: Will take in a race name and year then get the qualifying session for that year
 """
 def getQualiInfo(race:str, year:int):
-    session = None
-    return session
+    session = fastf1.get_session(year, race, "Q")
+    session.load(laps=True, weather=True)
+
+    laps = pd.DataFrame()
+
+    # Relevant Columns
+    laps["Driver"] = np.nan
+    laps["PreviousLap"] = np.nan
+    laps["TireAge"] = np.nan
+    laps["Weather"] = np.nan
+    laps["LapTime"] = np.nan
+
+    # weather = session.get_weather_data()
+    drivers = session.drivers
+    
+    for driver_num in drivers:
+        driver = session.get_driver(driver_num)["Abbreviation"]
+        driver_laps = session.laps.pick_drivers(driver).pick_wo_box()
+
+        previousLap = 0
+        lastDriver = None
+
+        for i, lap in driver_laps.iterrows():
+            # Set up new Lap
+
+            # Load the weather condition for that lap using python "ternary"
+            weather_condition = lap.get_weather_data()
+            weather_condition = "Wet" if weather_condition["Rainfall"] == True else "Dry"
+
+            # Checking so you have previous lap data to train off of
+            lap_time = lap["LapTime"]
+
+            if(previousLap != 0 and lastDriver == driver):
+                new_lap = pd.DataFrame({
+                    "Driver" : [driver],
+                    "PreviousLap" : [pd.to_timedelta(previousLap)/pd.Timedelta(seconds=1)],
+                    "TireAge" : [lap["TyreLife"]],
+                    "Weather" : [weather_condition],
+                    "LapTime" : [pd.to_timedelta(lap["LapTime"])/pd.Timedelta(seconds=1)],
+                })
 
 
-"""
-Name: mergeSessions
-Param: numSess:int, all dataframes with quali info
-Return: A new datframe that contains all the sessions merged
-"""
+                laps = pd.concat([laps, new_lap], ignore_index=True)
+                
+
+            previousLap = pd.to_timedelta(lap["LapTime"])
+            lastDriver = driver
+
+    return laps
 
 
 """
@@ -54,12 +94,26 @@ Description:
         7. Train model with data
         8. Save the trained model
 """
-def train_mode(race:str):
-    print("Starting Data Collection")
+def train_model(race:str):
+    # Get the sessions
     year_1 = getQualiInfo(race, 2022)
     year_2 = getQualiInfo(race, 2023)
     year_3 = getQualiInfo(race, 2024)
-    print("Finished Data Collection")
+
+    # Writing so I can understand the data
+    
+    # Merge 1 & 2
+    training_data = pd.concat([year_1, year_2])
+    
+    # file = open("quali_data.txt", "w+")
+    # file.write(training_data.to_markdown(index=False))
+    # file.write("\n")
+    # file.write(year_3.to_markdown(index=False))
+
+    # Convert to correct types
+
+    # One-Hot Encode
+    
 
 
 ### MAIN ###
@@ -83,10 +137,16 @@ except Exception as e:
 
 
 # Loop through all the seasons
-for race in season['Location']:
+print(season)
+row = 0
+for i, race in season.iterrows():
     # Print the race
-    print(race)
+    print(race["Country"])
+
     # Train a model -> make sure it is saves
-    train_model(race)
+    train_model(race["Country"])
+
+    break
+    
 
 # Take in Race, Driver, Condition, Previous Lap, Tire Age and give a prediction
