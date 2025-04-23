@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 
 
-
-
-
-
 class SimpleNN(nn.Module):
 
     def __init__(self, input_size, hidden1_size, hidden2_size, output_size):

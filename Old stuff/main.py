@@ -43,6 +43,8 @@ from SimpleNN import SimpleNN
         weather conditions
 """
 scalar = StandardScaler()
+cols_to_train = None
+
 # Functions
 def get_qualifying_laps(year: int, gp_name: str) -> dict:
     """
@@ -144,16 +146,17 @@ def scale_data(X_1_train):
 
 
 ### Main ###
-num_features = 5
-# race = input("Enter race name: ")
-def getPrediction(info):
-    # Training set 1
-    q1 = get_qualifying_laps(2022, info.race)
+def train_model(race):
+    num_features = 5
+    # race = input("Enter race name: ")
+    # def getPrediction(info):
+        # Training set 1
+    q1 = get_qualifying_laps(2022, race)
     # Training set 2
-    q2 = get_qualifying_laps(2023, info.race)
+    q2 = get_qualifying_laps(2023, race)
 
     # Testing set
-    qt = get_qualifying_laps(2024, info.race)
+    qt = get_qualifying_laps(2024, race)
 
 
     q_1 = clean_data(q1)
@@ -189,22 +192,24 @@ def getPrediction(info):
     X_test = q_t.drop(columns=['LapTime'])
     y_test = q_t['LapTime']
 
+    X_1_train = pd.concat([X_1_train, X_2_train])
+    y_1_train = pd.concat([y_1_train, y_2_train])
 
 
     X_1_train = pd.get_dummies(X_1_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
-    X_2_train = pd.get_dummies(X_2_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+    # X_2_train = pd.get_dummies(X_2_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
     X_test = pd.get_dummies(X_test, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
 
 
     X_1_train['TireAge'] = X_1_train['TireAge'].astype(np.double)
-    X_2_train['TireAge'] = X_2_train['TireAge'].astype(np.double)
+    # X_2_train['TireAge'] = X_2_train['TireAge'].astype(np.double)
     X_test['TireAge'] = X_test['TireAge'].astype(np.double)
 
     cols_to_scale = X_1_train.select_dtypes(include=np.double).columns.to_list()
 
 
     X_1_train[cols_to_scale] = scale_data(X_1_train)
-    X_2_train[cols_to_scale] = scale_data(X_2_train)
+    # X_2_train[cols_to_scale] = scale_data(X_2_train)
     X_test[cols_to_scale] = scale_data(X_test)
 
 
@@ -212,44 +217,51 @@ def getPrediction(info):
     file = open("quali_data.txt", "w+")
     file.write(X_1_train.to_markdown(index=False))
     file.write('\n')
-    file.write(X_2_train.to_markdown(index=False))
-    file.write('\n')
+    # file.write(X_2_train.to_markdown(index=False))
+    # file.write('\n')
     file.write(X_test.to_markdown(index=False))
 
-    num_features = len(X_1_train.columns)
-
-
-    # Training the model
-    model = SimpleNN(num_features, 5, 5, 1)
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    
 
     cols_to_train = X_1_train.columns.to_list()
-
+    num_features = len(X_1_train.columns)   
     # Convert features to numpy float32 first
     X_1_train_np = X_1_train.to_numpy(dtype=np.float32)
-    X_2_train_np = X_2_train.to_numpy(dtype=np.float32)
+    # X_2_train_np = X_2_train.to_numpy(dtype=np.float32)
     X_test_np = X_test.to_numpy(dtype=np.float32)
 
     # Convert targets to numpy float32 AND reshape for loss function (usually needs [N, 1])
     y_1_train_np = y_1_train.to_numpy(dtype=np.float32).reshape(-1, 1)
-    y_2_train_np = y_2_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+    # y_2_train_np = y_2_train.to_numpy(dtype=np.float32).reshape(-1, 1)
     y_test_np = y_test.to_numpy(dtype=np.float32).reshape(-1, 1)
 
     # Convert to tensors from float32 numpy arrays
     X_1_train = torch.from_numpy(X_1_train_np)
     y_1_train = torch.from_numpy(y_1_train_np)
-    X_2_train = torch.from_numpy(X_2_train_np)
-    y_2_train = torch.from_numpy(y_2_train_np)
+    # X_2_train = torch.from_numpy(X_2_train_np)
+    # y_2_train = torch.from_numpy(y_2_train_np)
     X_test = torch.from_numpy(X_test_np)
     y_test = torch.from_numpy(y_test_np)
 
-    # --- 1. Combine Training Data ---
-    X_train_combined = torch.cat((X_1_train, X_2_train), dim=0)
-    y_train_combined = torch.cat((y_1_train, y_2_train), dim=0)
+    # --- 1. Truncate to smaller size and Combine Training Data ---
+    # X_train_combined = torch.cat((X_1_train, X_2_train), dim=0)
+    # y_train_combined = torch.cat((y_1_train, y_2_train), dim=0)
+    
+
+    # min_len = min(X_1_train.shape[0], X_2_train.shape[0])
+    # print(f"Truncating training tensors to size: {min_len}")
+
+    # X_1_train_trunc = X_1_train[:min_len]
+    # y_1_train_trunc = y_1_train[:min_len]
+    # X_2_train_trunc = X_2_train[:min_len]
+    # y_2_train_trunc = y_2_train[:min_len]
+
+    # X_train_combined = torch.cat((X_1_train_trunc, X_2_train_trunc), dim=0)
+    # y_train_combined = torch.cat((y_1_train_trunc, y_2_train_trunc), dim=0)
+    # print(f"Combined training data shape: {X_train_combined.shape}")
 
     # --- 2. Create Dataset and DataLoader for Combined Training Data ---
-    train_dataset = TensorDataset(X_train_combined, y_train_combined)
+    train_dataset = TensorDataset(X_1_train, y_1_train) # Pass features (X_1_train) and targets (y_1_train)
     batch_size = 32 # Choose a reasonable batch size (e.g., 32, 64, 128)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) # Shuffle training data is important!
 
@@ -259,6 +271,12 @@ def getPrediction(info):
 
 
 
+
+
+    # Training the model
+    model = SimpleNN(num_features, 5, 5, 1)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
     # --- 5. The Correct Training Loop with Batches and Validation ---
     epochs = 4000 # Total epochs over the combined data
 
@@ -306,53 +324,70 @@ def getPrediction(info):
         avg_val_loss = val_loss_sum / len(val_dataset)
 
         # Print epoch statistics (shows training progress)
-        if (epoch + 1) % 100 == 0: # Print every 10 epochs, or more/less often
-            print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}')
+        # if (epoch + 1) % 100 == 0: # Print every 10 epochs, or more/less often
+        #     print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}')
 
     print("Training loop finished.")
 
-    # --- Final Evaluation on Test Data (after the training loop is completely done) ---
-    # You would do this using X_test, y_test (or your test_dataloader) once you've
-    # finished training and potentially selected the best model based on validation performance.
-    # This final step is separate from the training loop above.
+    
+    pathname = f"{race}.pth"
 
+    torch.save(model.state_dict(), pathname)
 
-    # abbr = input("Enter driver abbr: ")
-    # tireAge = int(input("Enter tire age: "))
-    # previousLap = float(input("Enter previous laptime: "))
-    # weather_cond = input("Enter weather conditions: ")
-
-    prediciton = {
-        "Driver":[info.driver],
-        "LapTime":[np.nan],
-        "TireAge":[int(info.tire_age)],
-        "Weather":[info.weather],
-        "PreviousLap":[float(info.previous_lap)]
-    }
-
-    df = pd.DataFrame(prediciton)
-
-    df = pd.get_dummies(df, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
-    df = df.reindex(columns=cols_to_train, fill_value=0)
-
-    # scalar.fit(df)
-    # df = scalar.transform(df)
-
-    df['TireAge'] = df['TireAge'].astype(np.double)
-    df['PreviousLap'] = df['PreviousLap'].astype(np.double)
-
-    cols_to_scale = df.select_dtypes(include=np.double).columns.to_list()
-    df[cols_to_scale] = scale_data(df)
-
-    input_val = torch.from_numpy(df.to_numpy(dtype=np.float32))
+# --- Final Evaluation on Test Data (after the training loop is completely done) ---
+# You would do this using X_test, y_test (or your test_dataloader) once you've
+# finished training and potentially selected the best model based on validation performance.
+# This final step is separate from the training loop above.
 
 
 
-    model.eval()
 
-    with torch.no_grad():
-        predicted = model(input_val)
 
-        print(f"Predicted lap time: {predicted}")
+# Saving all the models
+print(fastf1.get_event_schedule(2025))
+for race in fastf1.get_event_schedule(2025)['Location']:
+    print(race)
+    train_model(race)
+    break;
 
-    return predicted
+
+race = input("Enter Race: ")
+abbr = input("Enter driver abbr: ")
+tireAge = int(input("Enter tire age: "))
+previousLap = float(input("Enter previous laptime: "))
+weather_cond = input("Enter weather conditions: ")
+
+
+prediciton = {
+    "Driver":[abbr],
+    "LapTime":[np.nan],
+    "TireAge":[int(tireAge)],
+    "Weather":[weather_cond],
+    "PreviousLap":[float(previousLap)]
+}
+
+df = pd.DataFrame(prediciton)
+
+df = pd.get_dummies(df, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+df = df.reindex(columns=cols_to_train, fill_value=0)
+
+# scalar.fit(df)
+# df = scalar.transform(df)
+
+df['TireAge'] = df['TireAge'].astype(np.double)
+df['PreviousLap'] = df['PreviousLap'].astype(np.double)
+
+cols_to_scale = df.select_dtypes(include=np.double).columns.to_list()
+df[cols_to_scale] = scale_data(df)
+
+input_val = torch.from_numpy(df.to_numpy(dtype=np.float32))
+
+model = SimpleNN()
+model.load_state_dict(torch.load(f"{race}.pth", weights_only=True))
+
+model.eval()
+
+with torch.no_grad():
+    predicted = model(input_val)
+
+    print(f"Predicted lap time: {predicted}")
