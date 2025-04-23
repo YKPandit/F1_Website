@@ -5,7 +5,7 @@ import torch.optim as optim
 import pandas as pd
 import numpy as np
 
-import math
+
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 

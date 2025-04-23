@@ -7,8 +7,8 @@ from pydantic import BaseModel
 class infoRace(BaseModel):
     driver:str
     race:str
-    tire_age:str
-    previous_lap:str
+    tire_age:int
+    previous_lap:float
     weather:str
 
 
