@@ -20,8 +20,8 @@ from SimpleNN import SimpleNN
 # Other
 import os
 
-# Functions
 
+# Functions
 """ 
 Name: getQualiInfo
 Param: Race:str year:int
@@ -79,6 +79,41 @@ def getQualiInfo(race:str, year:int):
 
     return laps
 
+"""
+Name: scale_data
+Param: data:dataframe, cols_to_scale:list
+Return: dataframe
+Desc: Scale the data to 0->1
+"""
+def scale_data(data, cols_to_scale):
+    scalar = StandardScaler()
+    scalar.fit(data[cols_to_scale])
+    scaled = scalar.transform(data[cols_to_scale])
+    return pd.DataFrame(scaled, index=data.index, columns=cols_to_scale)
+
+def clean_data(data):
+    # Convert to correct types
+    data["TireAge"] = data["TireAge"].astype("double")
+    data["PreviousLap"] = data["PreviousLap"].astype("double")
+
+    # Seperate
+    y_train = data["LapTime"]
+    x_train = data.drop(columns=["LapTime"])
+
+    x_train = pd.get_dummies(x_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+    cols_to_scale = x_train.select_dtypes(include=np.double).columns.to_list()
+    x_train[cols_to_scale] = scale_data(x_train, cols_to_scale)
+
+    return x_train, y_train
+
+def to_tensor(x_train, y_train):
+    x_train = x_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+    y_train = y_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+
+    x_train_tensor = torch.from_numpy(x_train.values)
+    y_train_tensor = torch.from_numpy(y_train.values)
+
+    return x_train_tensor, y_train_tensor
 
 """
 Name: trainModel
@@ -99,20 +134,25 @@ def train_model(race:str):
     year_1 = getQualiInfo(race, 2022)
     year_2 = getQualiInfo(race, 2023)
     year_3 = getQualiInfo(race, 2024)
-
-    # Writing so I can understand the data
     
     # Merge 1 & 2
     training_data = pd.concat([year_1, year_2])
     
-    # file = open("quali_data.txt", "w+")
-    # file.write(training_data.to_markdown(index=False))
-    # file.write("\n")
-    # file.write(year_3.to_markdown(index=False))
+    x_train, y_train = clean_data(training_data)
+    x_test, y_test = clean_data(year_3)
 
-    # Convert to correct types
 
-    # One-Hot Encode
+    # Writing so I can understand the data
+    file = open("quali_data.txt", "w+")
+    file.write(x_train.to_markdown(index=False))
+    file.write("\n")
+    file.write(x_test.to_markdown(index=False))
+
+    # Convert to Tensor
+    x_train_tensor, y_train_tensor = to_tensor(x_train, y_train)
+    x_test_tensor, y_test_tensor = to_tensor(x_test, y_test)
+
+    
     
 
 
