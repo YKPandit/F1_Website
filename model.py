@@ -253,50 +253,69 @@ print(season)
 # for i, race in season.iterrows():
 #     # Print the race
 #     print(race["Country"])
+#     location = race["Location"]
+#     if(' ' in race["Location"]):
+#         location = location.replace(" ", "_")
+#         print(race)
 
 #     # Train a model -> make sure it is saves
-#     if(train_model(race["Country"], race["Location"]) == -1):
+#     if(train_model(race["Country"], location) == -1):
 #         print("Loading error")
 #         break
     
 
 # Take in Race, Driver, Condition, Previous Lap, Tire Age and give a prediction
-race = input("Enter race: ")
+# race = input("Enter race: ")
+# if(' ' in race):
+#     race = race.replace(" ", "_")
+#     print(race)
 
 driver = input("Enter driver: ")
 previousLap = float(input("Enter previous lap: "))
 tireAge = int(input("Enter tire age: "))
 weather = input("Enter weather conditions: ")
 
-headers = []
 
-filename = f"Models/{race}.txt"
-with open(filename, 'r') as f:
-    for line in f:
-      headers.append(line.strip())
+for i, race in season.iterrows():
+    # Print the race
+    print(race["Location"])
+    headers = []
+    # Train a model -> make sure it is saves
+    # if(train_model(race["Country"], race["Location"]) == -1):
+    #     print("Loading error")
+    #     break
+    race = race["Location"]
+    if(' ' in race):
+        race = race.replace(" ", "_")
+        # print(race)
 
-input_layer = int(headers.pop(len(headers)-1))
+    filename = f"Models/{race}.txt"
+    with open(filename, 'r') as f:
+        for line in f:
+            headers.append(line.strip())
 
-data = pd.DataFrame({
-    "Driver":[driver],
-    "PreviousLap":[previousLap],
-    "TireAge" : [tireAge],
-    "Weather" : [weather],
-    "LapTime" : [np.nan],
-})
+    input_layer = int(headers.pop(len(headers)-1))
 
-data, etc = clean_data(data, headers)
+    data = pd.DataFrame({
+        "Driver":[driver],
+        "PreviousLap":[previousLap],
+        "TireAge" : [tireAge],
+        "Weather" : [weather],
+        "LapTime" : [np.nan],
+    })
 
-data = torch.from_numpy(data.to_numpy(dtype=np.float32))
+    data, etc = clean_data(data, headers)
 
-path = f"Models/{race}.pth"
+    data = torch.from_numpy(data.to_numpy(dtype=np.float32))
 
-model = SimpleNN(input_layer, 5, 5, 1)
-model.load_state_dict(torch.load(path, weights_only=True))
 
-model.eval()
+    path = f"Models/{race}.pth"
+    model = SimpleNN(input_layer, 5, 5, 1)
+    model.load_state_dict(torch.load(path, weights_only=True))
 
-with torch.no_grad():
-    predicted = model(data)
+    model.eval()
 
-    print(f"Predicted lap time: {predicted.item()}")
+    with torch.no_grad():
+        predicted = model(data)
+
+        print(f"Predicted lap time: {predicted.item()}")
