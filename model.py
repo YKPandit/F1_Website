@@ -14,12 +14,17 @@ from torch.utils.data import TensorDataset
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+import joblib
 
 # Local Model Definition
 from SimpleNN import SimpleNN
 
 # Other
 import os
+
+
+# Globals
+
 
 # Functions
 """ 
@@ -91,9 +96,10 @@ def scale_data(data, cols_to_scale):
     scalar = StandardScaler()
     scalar.fit(data[cols_to_scale])
     scaled = scalar.transform(data[cols_to_scale])
+    joblib.dump(scalar, "model.gz")
     return pd.DataFrame(scaled, index=data.index, columns=cols_to_scale)
 
-def clean_data(data, headers):
+def clean_data(data, headers, scalar):
     # Convert to correct types
     data["TireAge"] = data["TireAge"].astype("double")
     data["PreviousLap"] = data["PreviousLap"].astype("double")
@@ -101,13 +107,24 @@ def clean_data(data, headers):
     # Seperate
     y_train = data["LapTime"]
     x_train = data.drop(columns=["LapTime"])
-
     x_train = pd.get_dummies(x_train, columns=['Driver', 'Weather', 'Race'], prefix=['Driver', 'Weather', 'Race'], dtype=int)
+    print(x_train)
+
+    
     if(headers != None):
         x_train = x_train.reindex(columns=headers, fill_value=0)
+    print(x_train)
+    
 
     cols_to_scale = x_train.select_dtypes(include=np.double).columns.to_list()
-    x_train[cols_to_scale] = scale_data(x_train, cols_to_scale)
+    # print(cols_to_scale)
+    # x_train[cols_to_scale] = scale_data(x_train, cols_to_scale)
+    # print(x_train)
+
+    
+    scaled = scalar.transform(data[cols_to_scale])
+    
+    x_train[cols_to_scale] = pd.DataFrame(scaled, index=data.index, columns=cols_to_scale)
 
     return x_train, y_train
 
@@ -135,9 +152,12 @@ Description:
         8. Save the trained model
 """
 def train_model(training_data, test_data):
-    
-    x_train, y_train = clean_data(training_data, None)
-    x_test, y_test = clean_data(test_data, None)
+    cols_to_scale = training_data.select_dtypes(include=np.double).columns.to_list()
+    scalar = StandardScaler()
+    scalar.fit(training_data[cols_to_scale])
+    x_train, y_train = clean_data(training_data, None, scalar)
+    x_test, y_test = clean_data(test_data, None, scalar)
+    joblib.dump(scalar, "model.gz")
 
     # Add this line to align test columns with train columns:
     x_test = x_test.reindex(columns=x_train.columns, fill_value=0)
@@ -162,8 +182,8 @@ def train_model(training_data, test_data):
     # Model Parameters
     model = SimpleNN(num_input, 20, 20, 1)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-5)
-    epochs = 5000
+    optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    epochs = 1000
     batch_size = 64
 
     # Loading
@@ -171,36 +191,54 @@ def train_model(training_data, test_data):
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
 
     # Training Loop
-    # print(f"Started training the model")
-    # for epoch in range(epochs):
-    #     model.train()
+    print(f"Started training the model")
+    best_val_loss = float('inf') # For early stopping
+    patience = 100 # How many epochs to wait for improvement
+    epochs_no_improve = 0
 
-    #     for batch_in, batch_targ in train_dataloader:
-    #          # Zero the parameter gradients
-    #         optimizer.zero_grad()
+    for epoch in range(epochs):
+        model.train()
+        running_train_loss = 0.0
 
-    #         # Forward Pass
-    #         outputs = model(batch_in)
+        for batch_in, batch_targ in train_dataloader:
 
-    #         # Calculate Loss for the CURRENT BATCH
-    #         # Ensure targets have the same shape as outputs if necessary (e.g., both [batch_size, 1])
-    #         loss = criterion(outputs, batch_targ)
+            optimizer.zero_grad()
+            outputs = model(batch_in)
+            loss = criterion(outputs, batch_targ)
+            loss.backward()
+            optimizer.step()
 
-    #         # Backward Pass (Backpropagation)
-    #         loss.backward()
+            running_train_loss += loss.item() * batch_in.size(0)
 
-    #         # Optimizer Step (Update weights and biases)
-    #         optimizer.step()
+        epoch_train_loss = running_train_loss / len(train_dataset)
 
-    
-    #     model.eval() # Set the model to evaluation mode
-    #     with torch.no_grad(): # Disable gradient calculation for evaluation
-    #         for val_inputs, val_targets in test_dataloader: # Use your actual val_dataloader here
-    #             val_outputs = model(val_inputs)
-    #             criterion(val_outputs, val_targets)
+        # --- Validation Evaluation ---
+        model.eval()
+        running_val_loss = 0.0
+        with torch.no_grad():
+            for val_inputs, val_targets in test_dataloader:
+                val_outputs = model(val_inputs)
+                batch_val_loss = criterion(val_outputs, val_targets)
+                running_val_loss += batch_val_loss.item() * val_inputs.size(0)
 
-    #     if((epoch + 1) % 100 == 0):
-    #         print(f"{epoch+1} / {epochs}")
+        epoch_val_loss = running_val_loss / len(test_data)
+
+        # Print epoch statistics
+        if (epoch + 1) % 100 == 0 or epoch == 0: # Print every 100 epochs and the first one
+             print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {epoch_train_loss:.4f}, Validation Loss: {epoch_val_loss:.4f}')
+
+        # --- Early Stopping Check ---
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            epochs_no_improve = 0
+            # Optional: Save the best model state
+            # torch.save(model.state_dict(), os.path.join(MODELS_DIR, "best_model.pth"))
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve == patience:
+                print(f"Early stopping triggered after {epoch+1} epochs.")
+                break # Exit the training loop
+
 
 
     print(f"Finished training the model")
@@ -239,46 +277,46 @@ except Exception as e:
 
 # Loop through all the seasons
 print(season)
-# row = 0
 all_training_races = None
 all_val_races = None
-# for i, race in season.iterrows():
-#     # Print the race
-#     print(race["Country"])
-#     location = race["Location"]
-#     if(' ' in race["Location"]):
-#         location = location.replace(" ", "_")
-#         print(race)
+for i, race in season.iterrows():
+    # Print the race
+    print(race["Country"])
+    location = race["Location"]
+    if(' ' in race["Location"]):
+        location = location.replace(" ", "_")
+        print(race)
 
-#     year_1 = getQualiInfo(race["Location"], 2022)
-#     if(year_1.empty):
-#         print("Error: No race")
-#         break
-#     all_training_races = pd.concat([all_training_races, year_1])
+    year_1 = getQualiInfo(race["Location"], 2022)
+    if(year_1.empty):
+        print("Error: No race")
+        break
+    all_training_races = pd.concat([all_training_races, year_1])
     
 
-#     year_2 = getQualiInfo(race["Location"], 2023)
-#     if(year_2.empty):
-#         print("Error: No race")
-#         break
+    year_2 = getQualiInfo(race["Location"], 2023)
+    if(year_2.empty):
+        print("Error: No race")
+        break
 
-#     all_training_races = pd.concat([all_training_races, year_2])
+    all_training_races = pd.concat([all_training_races, year_2])
 
-#     year_3 = getQualiInfo(race["Location"], 2024)
-#     if(year_3.empty):
-#         print("Error: No race")
-#         break
-#     all_val_races = pd.concat([all_training_races, year_3])
+    year_3 = getQualiInfo(race["Location"], 2024)
+    if(year_3.empty):
+        print("Error: No race")
+        break
+    all_val_races = pd.concat([all_val_races, year_3])
 
     
-#     file = open("quali_data.txt", "w+")
-#     file.write(all_training_races.to_markdown(index=False))
-#     file.write('\n')
-#     file = open("val.txt", "w+")
-#     file.write(all_val_races.to_markdown(index=False))
+    file = open("quali_data.txt", "w+")
+    file.write(all_training_races.to_markdown(index=False))
+    file.write('\n')
+    file = open("val.txt", "w+")
+    file.write(all_val_races.to_markdown(index=False))
 
 
-
+if(train_model(all_training_races, all_val_races) == -1):
+    print("Training error")
 
 # Take in Race, Driver, Condition, Previous Lap, Tire Age and give a prediction
 # race = input("Enter race: ")
@@ -286,8 +324,7 @@ all_val_races = None
 #     race = race.replace(" ", "_")
 #     print(race)
 
-# if(train_model(all_training_races, all_val_races) == -1):
-#     print("Loading error")
+
 
 driver = input("Enter driver: ")
 previousLap = float(input("Enter previous lap: "))
@@ -307,6 +344,10 @@ with open(filename, 'r') as f:
 
 input_layer = int(headers.pop(len(headers)-1))
 
+file = open("other.txt", "w+")
+path = f"Models/model.pth"
+model = SimpleNN(input_layer, 20, 20, 1)
+model.load_state_dict(torch.load(path, weights_only=True))
 for i, race in season.iterrows():
     race = race["Location"]
     print(race)
@@ -321,18 +362,45 @@ for i, race in season.iterrows():
         "Race": [race]
     })
 
-    data, etc = clean_data(data, headers)
+    # 
+    # data, etc = clean_data(data, headers)
+    # print(data)
+
+    data["TireAge"] = data["TireAge"].astype("double")
+    data["PreviousLap"] = data["PreviousLap"].astype("double")
+
+    # Seperate
+    y_train = data["LapTime"]
+    x_train = data.drop(columns=["LapTime"])
+    x_train = pd.get_dummies(x_train, columns=['Driver', 'Weather', 'Race'], prefix=['Driver', 'Weather', 'Race'], dtype=int)
+
+    
+    if(headers != None):
+        x_train = x_train.reindex(columns=headers, fill_value=0)
+    
+
+    cols_to_scale = x_train.select_dtypes(include=np.double).columns.to_list()
+    loaded_scalar = joblib.load("model.gz")
+    scaled = loaded_scalar.transform(x_train[cols_to_scale])
+    x_train[cols_to_scale] = pd.DataFrame(scaled, index=x_train.index, columns=cols_to_scale)
+    data = x_train
+
+
+
+    file.write(data.to_markdown(index=False))
+    file.write('\n')
+    
 
     data = torch.from_numpy(data.to_numpy(dtype=np.float32))
 
+    print(data)
 
-    path = f"Models/model.pth"
-    model = SimpleNN(input_layer, 20, 20, 1)
-    model.load_state_dict(torch.load(path, weights_only=True))
+
+    
 
     model.eval()
 
     with torch.no_grad():
         predicted = model(data)
 
-        print(f"Predicted lap time: {predicted.item()}")
+        print(f"Predicted lap time: {predicted}")
