@@ -40,6 +40,7 @@ def getQualiInfo(race:str, year:int):
     laps["TireAge"] = np.nan
     laps["Weather"] = np.nan
     laps["LapTime"] = np.nan
+    laps["Race"] = np.nan
 
     # weather = session.get_weather_data()
     drivers = session.drivers
@@ -68,6 +69,7 @@ def getQualiInfo(race:str, year:int):
                     "TireAge" : [lap["TyreLife"]],
                     "Weather" : [weather_condition],
                     "LapTime" : [pd.to_timedelta(lap["LapTime"])/pd.Timedelta(seconds=1)],
+                    "Race":[race]
                 })
 
 
@@ -100,7 +102,7 @@ def clean_data(data, headers):
     y_train = data["LapTime"]
     x_train = data.drop(columns=["LapTime"])
 
-    x_train = pd.get_dummies(x_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+    x_train = pd.get_dummies(x_train, columns=['Driver', 'Weather', 'Race'], prefix=['Driver', 'Weather', 'Race'], dtype=int)
     if(headers != None):
         x_train = x_train.reindex(columns=headers, fill_value=0)
 
@@ -132,35 +134,20 @@ Description:
         7. Train model with data
         8. Save the trained model
 """
-def train_model(race:str, name:str):
-    # Get the sessions
-    year_1 = getQualiInfo(race, 2022)
-    if(year_1.empty):
-        print("Error: No race")
-        return -1
-    year_2 = getQualiInfo(race, 2023)
-    if(year_2.empty):
-        print("Error: No race")
-        return -1
-    year_3 = getQualiInfo(race, 2024)
-    if(year_3.empty):
-        print("Error: No race")
-        return -1
-    
-    # Merge 1 & 2
-    training_data = pd.concat([year_1, year_2])
+def train_model(training_data, test_data):
     
     x_train, y_train = clean_data(training_data, None)
-    x_test, y_test = clean_data(year_3, None)
+    x_test, y_test = clean_data(test_data, None)
 
     # Add this line to align test columns with train columns:
     x_test = x_test.reindex(columns=x_train.columns, fill_value=0)
 
-    # Writing so I can understand the data
-    # file = open("quali_data.txt", "w+")
-    # file.write(x_train.to_markdown(index=False))
-    # file.write("\n")
-    # file.write(x_test.to_markdown(index=False))
+    file = open("quali_data.txt", "w+")
+    file.write(x_train.to_markdown(index=False))
+    file.write('\n')
+    # file.write(X_2_train.to_markdown(index=False))
+    # file.write('\n')
+    file.write(x_test.to_markdown(index=False))
 
     num_input = len(x_train.columns)
     headers = x_train.columns
@@ -173,51 +160,54 @@ def train_model(race:str, name:str):
     test_dataset = TensorDataset(x_test_tensor, y_test_tensor)
 
     # Model Parameters
-    model = SimpleNN(num_input, 5, 5, 1)
+    model = SimpleNN(num_input, 20, 20, 1)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
-    epochs = 4000
-    batch_size = 32
+    optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-5)
+    epochs = 5000
+    batch_size = 64
 
     # Loading
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
 
     # Training Loop
-    print(f"Started training the {race} model")
-    for epoch in range(epochs):
-        model.train()
+    # print(f"Started training the model")
+    # for epoch in range(epochs):
+    #     model.train()
 
-        for batch_in, batch_targ in train_dataloader:
-             # Zero the parameter gradients
-            optimizer.zero_grad()
+    #     for batch_in, batch_targ in train_dataloader:
+    #          # Zero the parameter gradients
+    #         optimizer.zero_grad()
 
-            # Forward Pass
-            outputs = model(batch_in)
+    #         # Forward Pass
+    #         outputs = model(batch_in)
 
-            # Calculate Loss for the CURRENT BATCH
-            # Ensure targets have the same shape as outputs if necessary (e.g., both [batch_size, 1])
-            loss = criterion(outputs, batch_targ)
+    #         # Calculate Loss for the CURRENT BATCH
+    #         # Ensure targets have the same shape as outputs if necessary (e.g., both [batch_size, 1])
+    #         loss = criterion(outputs, batch_targ)
 
-            # Backward Pass (Backpropagation)
-            loss.backward()
+    #         # Backward Pass (Backpropagation)
+    #         loss.backward()
 
-            # Optimizer Step (Update weights and biases)
-            optimizer.step()
+    #         # Optimizer Step (Update weights and biases)
+    #         optimizer.step()
 
     
-        model.eval() # Set the model to evaluation mode
-        with torch.no_grad(): # Disable gradient calculation for evaluation
-            for val_inputs, val_targets in test_dataloader: # Use your actual val_dataloader here
-                val_outputs = model(val_inputs)
-                criterion(val_outputs, val_targets)
+    #     model.eval() # Set the model to evaluation mode
+    #     with torch.no_grad(): # Disable gradient calculation for evaluation
+    #         for val_inputs, val_targets in test_dataloader: # Use your actual val_dataloader here
+    #             val_outputs = model(val_inputs)
+    #             criterion(val_outputs, val_targets)
+
+    #     if((epoch + 1) % 100 == 0):
+    #         print(f"{epoch+1} / {epochs}")
 
 
-    print(f"Finished training the {race} model")
-    pathname = f"Models/{name}.pth"
+    print(f"Finished training the model")
+    pathname = f"Models/model.pth"
     torch.save(model.state_dict(), pathname)
 
-    pathname = f"Models/{name}.txt"
+    pathname = f"Models/model.txt"
     with open(pathname, 'w+') as f:
         for header in headers:
             f.write(f"{header}\n")
@@ -250,6 +240,8 @@ except Exception as e:
 # Loop through all the seasons
 print(season)
 # row = 0
+all_training_races = None
+all_val_races = None
 # for i, race in season.iterrows():
 #     # Print the race
 #     print(race["Country"])
@@ -258,11 +250,35 @@ print(season)
 #         location = location.replace(" ", "_")
 #         print(race)
 
-#     # Train a model -> make sure it is saves
-#     if(train_model(race["Country"], location) == -1):
-#         print("Loading error")
+#     year_1 = getQualiInfo(race["Location"], 2022)
+#     if(year_1.empty):
+#         print("Error: No race")
 #         break
+#     all_training_races = pd.concat([all_training_races, year_1])
     
+
+#     year_2 = getQualiInfo(race["Location"], 2023)
+#     if(year_2.empty):
+#         print("Error: No race")
+#         break
+
+#     all_training_races = pd.concat([all_training_races, year_2])
+
+#     year_3 = getQualiInfo(race["Location"], 2024)
+#     if(year_3.empty):
+#         print("Error: No race")
+#         break
+#     all_val_races = pd.concat([all_training_races, year_3])
+
+    
+#     file = open("quali_data.txt", "w+")
+#     file.write(all_training_races.to_markdown(index=False))
+#     file.write('\n')
+#     file = open("val.txt", "w+")
+#     file.write(all_val_races.to_markdown(index=False))
+
+
+
 
 # Take in Race, Driver, Condition, Previous Lap, Tire Age and give a prediction
 # race = input("Enter race: ")
@@ -270,31 +286,31 @@ print(season)
 #     race = race.replace(" ", "_")
 #     print(race)
 
+# if(train_model(all_training_races, all_val_races) == -1):
+#     print("Loading error")
+
 driver = input("Enter driver: ")
 previousLap = float(input("Enter previous lap: "))
 tireAge = int(input("Enter tire age: "))
 weather = input("Enter weather conditions: ")
 
 
+
+# Print the race
+# print(race["Location"])
+headers = []
+# Train a model -> make sure it is saves
+filename = f"Models/model.txt"
+with open(filename, 'r') as f:
+    for line in f:
+        headers.append(line.strip())
+
+input_layer = int(headers.pop(len(headers)-1))
+
 for i, race in season.iterrows():
-    # Print the race
-    print(race["Location"])
-    headers = []
-    # Train a model -> make sure it is saves
-    # if(train_model(race["Country"], race["Location"]) == -1):
-    #     print("Loading error")
-    #     break
     race = race["Location"]
-    if(' ' in race):
-        race = race.replace(" ", "_")
-        # print(race)
-
-    filename = f"Models/{race}.txt"
-    with open(filename, 'r') as f:
-        for line in f:
-            headers.append(line.strip())
-
-    input_layer = int(headers.pop(len(headers)-1))
+    print(race)
+    
 
     data = pd.DataFrame({
         "Driver":[driver],
@@ -302,6 +318,7 @@ for i, race in season.iterrows():
         "TireAge" : [tireAge],
         "Weather" : [weather],
         "LapTime" : [np.nan],
+        "Race": [race]
     })
 
     data, etc = clean_data(data, headers)
@@ -309,8 +326,8 @@ for i, race in season.iterrows():
     data = torch.from_numpy(data.to_numpy(dtype=np.float32))
 
 
-    path = f"Models/{race}.pth"
-    model = SimpleNN(input_layer, 5, 5, 1)
+    path = f"Models/model.pth"
+    model = SimpleNN(input_layer, 20, 20, 1)
     model.load_state_dict(torch.load(path, weights_only=True))
 
     model.eval()

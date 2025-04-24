@@ -1,0 +1,54 @@
+PreviousLap
+TireAge
+Driver_ALB
+Driver_ALO
+Driver_BOT
+Driver_DEV
+Driver_GAS
+Driver_HAM
+Driver_HUL
+Driver_LAT
+Driver_LAW
+Driver_LEC
+Driver_MAG
+Driver_MSC
+Driver_NOR
+Driver_OCO
+Driver_PER
+Driver_PIA
+Driver_RIC
+Driver_RUS
+Driver_SAI
+Driver_SAR
+Driver_STR
+Driver_TSU
+Driver_VER
+Driver_VET
+Driver_ZHO
+Weather_Dry
+Weather_Wet
+Race_Austin
+Race_Baku
+Race_Barcelona
+Race_Budapest
+Race_Imola
+Race_Jeddah
+Race_Las Vegas
+Race_Lusail
+Race_Marina Bay
+Race_Melbourne
+Race_Mexico City
+Race_Miami
+Race_Monaco
+Race_Montréal
+Race_Monza
+Race_Sakhir
+Race_Shanghai
+Race_Silverstone
+Race_Spa-Francorchamps
+Race_Spielberg
+Race_Suzuka
+Race_São Paulo
+Race_Yas Island
+Race_Zandvoort
+53
