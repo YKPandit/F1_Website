@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset
 
 # Processing imports
 import pandas as pd
@@ -19,7 +20,6 @@ from SimpleNN import SimpleNN
 
 # Other
 import os
-
 
 # Functions
 """ 
@@ -91,7 +91,7 @@ def scale_data(data, cols_to_scale):
     scaled = scalar.transform(data[cols_to_scale])
     return pd.DataFrame(scaled, index=data.index, columns=cols_to_scale)
 
-def clean_data(data):
+def clean_data(data, headers):
     # Convert to correct types
     data["TireAge"] = data["TireAge"].astype("double")
     data["PreviousLap"] = data["PreviousLap"].astype("double")
@@ -101,17 +101,20 @@ def clean_data(data):
     x_train = data.drop(columns=["LapTime"])
 
     x_train = pd.get_dummies(x_train, columns=['Driver', 'Weather'], prefix=['Driver', 'Weather'], dtype=int)
+    if(headers != None):
+        x_train = x_train.reindex(columns=headers, fill_value=0)
+
     cols_to_scale = x_train.select_dtypes(include=np.double).columns.to_list()
     x_train[cols_to_scale] = scale_data(x_train, cols_to_scale)
 
     return x_train, y_train
 
 def to_tensor(x_train, y_train):
-    x_train = x_train.to_numpy(dtype=np.float32).reshape(-1, 1)
+    x_train = x_train.to_numpy(dtype=np.float32)
     y_train = y_train.to_numpy(dtype=np.float32).reshape(-1, 1)
 
-    x_train_tensor = torch.from_numpy(x_train.values)
-    y_train_tensor = torch.from_numpy(y_train.values)
+    x_train_tensor = torch.from_numpy(x_train)
+    y_train_tensor = torch.from_numpy(y_train)
 
     return x_train_tensor, y_train_tensor
 
@@ -129,31 +132,99 @@ Description:
         7. Train model with data
         8. Save the trained model
 """
-def train_model(race:str):
+def train_model(race:str, name:str):
     # Get the sessions
     year_1 = getQualiInfo(race, 2022)
+    if(year_1.empty):
+        print("Error: No race")
+        return -1
     year_2 = getQualiInfo(race, 2023)
+    if(year_2.empty):
+        print("Error: No race")
+        return -1
     year_3 = getQualiInfo(race, 2024)
+    if(year_3.empty):
+        print("Error: No race")
+        return -1
     
     # Merge 1 & 2
     training_data = pd.concat([year_1, year_2])
     
-    x_train, y_train = clean_data(training_data)
-    x_test, y_test = clean_data(year_3)
+    x_train, y_train = clean_data(training_data, None)
+    x_test, y_test = clean_data(year_3, None)
 
+    # Add this line to align test columns with train columns:
+    x_test = x_test.reindex(columns=x_train.columns, fill_value=0)
 
     # Writing so I can understand the data
-    file = open("quali_data.txt", "w+")
-    file.write(x_train.to_markdown(index=False))
-    file.write("\n")
-    file.write(x_test.to_markdown(index=False))
+    # file = open("quali_data.txt", "w+")
+    # file.write(x_train.to_markdown(index=False))
+    # file.write("\n")
+    # file.write(x_test.to_markdown(index=False))
+
+    num_input = len(x_train.columns)
+    headers = x_train.columns
 
     # Convert to Tensor
     x_train_tensor, y_train_tensor = to_tensor(x_train, y_train)
     x_test_tensor, y_test_tensor = to_tensor(x_test, y_test)
 
+    train_dataset = TensorDataset(x_train_tensor, y_train_tensor)
+    test_dataset = TensorDataset(x_test_tensor, y_test_tensor)
+
+    # Model Parameters
+    model = SimpleNN(num_input, 5, 5, 1)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    epochs = 4000
+    batch_size = 32
+
+    # Loading
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
+
+    # Training Loop
+    print(f"Started training the {race} model")
+    for epoch in range(epochs):
+        model.train()
+
+        for batch_in, batch_targ in train_dataloader:
+             # Zero the parameter gradients
+            optimizer.zero_grad()
+
+            # Forward Pass
+            outputs = model(batch_in)
+
+            # Calculate Loss for the CURRENT BATCH
+            # Ensure targets have the same shape as outputs if necessary (e.g., both [batch_size, 1])
+            loss = criterion(outputs, batch_targ)
+
+            # Backward Pass (Backpropagation)
+            loss.backward()
+
+            # Optimizer Step (Update weights and biases)
+            optimizer.step()
+
     
+        model.eval() # Set the model to evaluation mode
+        with torch.no_grad(): # Disable gradient calculation for evaluation
+            for val_inputs, val_targets in test_dataloader: # Use your actual val_dataloader here
+                val_outputs = model(val_inputs)
+                criterion(val_outputs, val_targets)
+
+
+    print(f"Finished training the {race} model")
+    pathname = f"Models/{name}.pth"
+    torch.save(model.state_dict(), pathname)
+
+    pathname = f"Models/{name}.txt"
+    with open(pathname, 'w+') as f:
+        for header in headers:
+            f.write(f"{header}\n")
+
+        f.write(str(num_input))
     
+
 
 
 ### MAIN ###
@@ -178,15 +249,54 @@ except Exception as e:
 
 # Loop through all the seasons
 print(season)
-row = 0
-for i, race in season.iterrows():
-    # Print the race
-    print(race["Country"])
+# row = 0
+# for i, race in season.iterrows():
+#     # Print the race
+#     print(race["Country"])
 
-    # Train a model -> make sure it is saves
-    train_model(race["Country"])
-
-    break
+#     # Train a model -> make sure it is saves
+#     if(train_model(race["Country"], race["Location"]) == -1):
+#         print("Loading error")
+#         break
     
 
 # Take in Race, Driver, Condition, Previous Lap, Tire Age and give a prediction
+race = input("Enter race: ")
+
+driver = input("Enter driver: ")
+previousLap = float(input("Enter previous lap: "))
+tireAge = int(input("Enter tire age: "))
+weather = input("Enter weather conditions: ")
+
+headers = []
+
+filename = f"Models/{race}.txt"
+with open(filename, 'r') as f:
+    for line in f:
+      headers.append(line.strip())
+
+input_layer = int(headers.pop(len(headers)-1))
+
+data = pd.DataFrame({
+    "Driver":[driver],
+    "PreviousLap":[previousLap],
+    "TireAge" : [tireAge],
+    "Weather" : [weather],
+    "LapTime" : [np.nan],
+})
+
+data, etc = clean_data(data, headers)
+
+data = torch.from_numpy(data.to_numpy(dtype=np.float32))
+
+path = f"Models/{race}.pth"
+
+model = SimpleNN(input_layer, 5, 5, 1)
+model.load_state_dict(torch.load(path, weights_only=True))
+
+model.eval()
+
+with torch.no_grad():
+    predicted = model(data)
+
+    print(f"Predicted lap time: {predicted.item()}")
