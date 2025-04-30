@@ -122,8 +122,8 @@ for i, race in season.iterrows():
     sessions = pd.concat([sessions, merged])
     latest_season = pd.concat([latest_season, y3])
     
-    if(counter == 2):
-        break
+    # if(counter == 2):
+    #     break
     
 
 # print(sessions)
@@ -200,7 +200,7 @@ num_input = len(x_train.columns)
 model = SimpleNN(num_input, 20, 20, 1)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-2)
-epochs = 10000
+epochs = 7000
 batch_size = 32
 
 # Loading
@@ -272,7 +272,7 @@ data = pd.DataFrame({
         "PreviousLap":[82],
         "TireAge" : [2.0],
         "Weather" : ["Dry"],
-        "Race": ["Sakhir"]
+        "Race": ["Melbourne"]
     })
 
 data_encoded = encoder.transform(data[cols_to_encode])
@@ -281,9 +281,9 @@ data = data[cols_to_encode + other_cols].join(data_encoded)
 data = data.drop(columns=cols_to_encode)
 data[other_cols] = scaler.transform(data[other_cols])
 data = data.reindex(columns=x_train.columns, fill_value=0)
-file = open("quali_data.txt", "w+")
-file.write(data.to_markdown(index=False))
-file.write('\n')
+# file = open("quali_data.txt", "w+")
+# file.write(data.to_markdown(index=False))
+# file.write('\n')
 data_num = data.to_numpy(dtype=np.float32)
 data = torch.from_numpy(data_num)
 
@@ -295,3 +295,25 @@ with torch.no_grad():
     predicted = model(data)
 
     print(f"Predicted lap time: {predicted}")
+
+
+joblib.dump(scaler, "./Models/scalar.pkl")
+joblib.dump(encoder, "./Models/encoder.pkl")
+
+file = open("Models/columns.txt", "w+")
+
+for name in x_train.columns.to_list():
+    file.write(name)
+    file.write('\n')
+
+file.write(str(len(x_train.columns.to_list())))
+file.write('\n')
+for col in cols_to_encode:
+    file.write(col)
+    file.write('\n')
+
+for col in other_cols:
+    file.write(col)
+    file.write('\n')
+
+torch.save(model.state_dict(), "Models/model.pth")
